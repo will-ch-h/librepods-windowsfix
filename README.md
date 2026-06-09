@@ -7,6 +7,9 @@ Thanks to:
 
 This fork successfully allows for librepods to work on windows with the ability to change listening modes and more.
 
+Recomended for advanced/technical users only. 
+A custom driver is utilized that has to be used in Windows Test mode. 
+This impacts the security of your system and should not be done lightly.
 ## How does it work?
 
 LibrePods communicates with AirPods over the Bluetooth **L2CAP** protocol, but Windows
