@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQuick.Window
 
 ApplicationWindow {
     id: mainWindow
@@ -11,7 +12,41 @@ ApplicationWindow {
     title: "LibrePods"
     objectName: "mainWindowObject"
 
+    // Frameless flyout: no border, no taskbar button, floats above other windows.
+    flags: Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
+    color: "transparent"
+
+    SystemPalette { id: winPalette; colorGroup: SystemPalette.Active }
+
+    // Rounded card background (the window itself is transparent).
+    background: Rectangle {
+        radius: 12
+        color: winPalette.window
+        border.width: 1
+        border.color: Qt.rgba(winPalette.windowText.r, winPalette.windowText.g, winPalette.windowText.b, 0.12)
+    }
+
+    // Dismiss when focus is lost, once the flyout has actually been shown/focused
+    // (so it doesn't vanish before it ever gains focus on launch).
+    property bool flyoutActivated: false
+    onActiveChanged: {
+        if (active) {
+            flyoutActivated = true
+        } else if (flyoutActivated) {
+            flyoutActivated = false
+            mainWindow.visible = false
+        }
+    }
+
     onClosing: mainWindow.visible = false
+
+    // Anchor the window at the bottom-right of the work area, just above the
+    // system tray / taskbar (like Surfshark's flyout).
+    function positionNearTray() {
+        var m = 12
+        mainWindow.x = Screen.virtualX + Screen.desktopAvailableWidth - mainWindow.width - m
+        mainWindow.y = Screen.virtualY + Screen.desktopAvailableHeight - mainWindow.height - m
+    }
 
     function reopen(pageToLoad) {
         if (pageToLoad == "settings")
@@ -29,6 +64,7 @@ ApplicationWindow {
             }
         }
 
+        positionNearTray()
         if (!mainWindow.visible) {
             mainWindow.visible = true
         }
@@ -68,7 +104,10 @@ ApplicationWindow {
     // Show the flyout only on a genuine connect (false -> true), not every time
     // the app launches while the AirPods happen to already be connected.
     property bool wasConnected: false
-    Component.onCompleted: mainWindow.wasConnected = airPodsTrayApp.airpodsConnected
+    Component.onCompleted: {
+        mainWindow.wasConnected = airPodsTrayApp.airpodsConnected
+        positionNearTray()
+    }
     Connections {
         target: airPodsTrayApp
         function onAirPodsStatusChanged() {

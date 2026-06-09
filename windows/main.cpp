@@ -503,19 +503,9 @@ public slots:
 private slots:
     void onTrayIconActivated()
     {
-        if (QGuiApplication::topLevelWindows().isEmpty())
-        {
-            loadMainModule();
-            return;
-        }
-        QQuickWindow *window = qobject_cast<QQuickWindow *>(
-            QGuiApplication::topLevelWindows().constFirst());
-        if (window)
-        {
-            window->show();
-            window->raise();
-            window->requestActivate();
-        }
+        // Route through the QML reopen() so the window is repositioned near the
+        // tray and shown reliably (there are now multiple top-level windows).
+        reopenOrLoadModule("app");
     }
 
     void onOpenApp()
@@ -1130,6 +1120,9 @@ private:
     QString m_phoneMacStatus;
 };
 
+// Only write the on-disk log when launched with --debug; normal launches log nothing.
+static bool g_fileLogging = false;
+
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
@@ -1149,22 +1142,24 @@ int main(int argc, char *argv[]) {
         fprintf(output, "[%s] %s\n", level, localMsg.constData());
         fflush(output);
 
-        // A WIN32 GUI app has no console, so also append to a log file we can
-        // inspect: %APPDATA%\LibrePods\librepods.log
-        static QFile logFile;
-        static bool inited = false;
-        if (!inited) {
-            inited = true;
-            QString dir = QString::fromLocal8Bit(qgetenv("APPDATA")) + "/LibrePods";
-            QDir().mkpath(dir);
-            logFile.setFileName(dir + "/librepods.log");
-            logFile.open(QIODevice::Append | QIODevice::Text);
-        }
-        if (logFile.isOpen()) {
-            QTextStream ts(&logFile);
-            ts << QDateTime::currentDateTime().toString("HH:mm:ss.zzz")
-               << " [" << level << "] " << msg << "\n";
-            ts.flush();
+        // With --debug, also append to a log file we can inspect (a WIN32 GUI app
+        // has no console): %APPDATA%\LibrePods\librepods.log
+        if (g_fileLogging) {
+            static QFile logFile;
+            static bool inited = false;
+            if (!inited) {
+                inited = true;
+                QString dir = QString::fromLocal8Bit(qgetenv("APPDATA")) + "/LibrePods";
+                QDir().mkpath(dir);
+                logFile.setFileName(dir + "/librepods.log");
+                logFile.open(QIODevice::Append | QIODevice::Text);
+            }
+            if (logFile.isOpen()) {
+                QTextStream ts(&logFile);
+                ts << QDateTime::currentDateTime().toString("HH:mm:ss.zzz")
+                   << " [" << level << "] " << msg << "\n";
+                ts.flush();
+            }
         }
 
         if (type == QtFatalMsg)
@@ -1208,6 +1203,7 @@ int main(int argc, char *argv[]) {
         if (QString(argv[i]) == "--hide")
             hideOnStart = true;
     }
+    g_fileLogging = debugMode; // only write the on-disk log under --debug
 
     // Use the Windows 11 Fluent / WinUI 3 control style. Must be set before any
     // QML is loaded. Standard controls (Switch, Slider, ComboBox, Button) adopt
