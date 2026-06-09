@@ -221,6 +221,9 @@ ApplicationWindow {
                         }
                     }
 
+                    // Cross-Device (multi-device play) toggle hidden on Windows: doesn't work here yet.
+                    // The backend (setCrossDeviceEnabled) is kept intact — might revisit.
+                    /*
                     Switch {
                         text: "Cross-Device Connectivity with Android"
                         checked: airPodsTrayApp.crossDeviceEnabled
@@ -228,6 +231,7 @@ ApplicationWindow {
                             airPodsTrayApp.setCrossDeviceEnabled(checked)
                         }
                     }
+                    */
 
                     Switch {
                         text: "Auto-Start on Login"

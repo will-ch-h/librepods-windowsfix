@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickStyle>
 #include <QBluetoothLocalDevice>
 #include <QBluetoothSocket>
 #include <QQuickWindow>
@@ -1172,6 +1173,11 @@ int main(int argc, char *argv[]) {
         if (QString(argv[i]) == "--hide")
             hideOnStart = true;
     }
+
+    // Use the Windows 11 Fluent / WinUI 3 control style. Must be set before any
+    // QML is loaded. Standard controls (Switch, Slider, ComboBox, Button) adopt
+    // it automatically; hand-drawn components keep their custom look.
+    QQuickStyle::setStyle("FluentWinUI3");
 
     QQmlApplicationEngine engine;
     qmlRegisterType<Battery>("me.kavishdevar.Battery", 1, 0, "Battery");

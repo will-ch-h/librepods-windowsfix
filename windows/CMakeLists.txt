@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find required packages
-find_package(Qt6 REQUIRED COMPONENTS Quick Widgets Bluetooth Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Quick Widgets Bluetooth Multimedia QuickControls2)
 find_package(OpenSSL REQUIRED)
 
 qt_standard_project_setup(REQUIRES 6.5)
@@ -75,10 +75,11 @@ qt_add_resources(librepods-windows "resources"
 # Link against required libraries
 target_link_libraries(librepods-windows
     PRIVATE 
-    Qt6::Quick 
-    Qt6::Widgets 
-    Qt6::Bluetooth 
+    Qt6::Quick
+    Qt6::Widgets
+    Qt6::Bluetooth
     Qt6::Multimedia
+    Qt6::QuickControls2
     OpenSSL::SSL 
     OpenSSL::Crypto
     # Windows-specific libraries
