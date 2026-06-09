@@ -81,6 +81,14 @@ private:
   // the short gaps between words/sentences.
   void beginCaRestore();
 
+#ifdef Q_OS_WIN
+  // Make the AirPods the default Windows output, retrying while the audio
+  // endpoint comes up (it lags the control channel after a reconnect).
+  void activateWindowsAudioOutput();
+  QTimer *m_winAudioRetryTimer = nullptr;
+  int m_winAudioRetries = 0;
+#endif
+
   QStringList pausedByAppServices;
   bool m_pausedByEarDetection = false;
   int initialVolume = -1;

@@ -52,6 +52,9 @@ signals:
     void connected();
     void readyRead();
     void errorOccurred(WinL2capSocket::SocketError error);
+    // Emitted when the channel drops on its own (device went away), as opposed
+    // to a deliberate close(). API-compatible with QBluetoothSocket::disconnected.
+    void disconnected();
 
 private:
     void startReader();

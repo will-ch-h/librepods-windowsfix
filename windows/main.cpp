@@ -105,6 +105,7 @@ public:
 
         connect(m_bleManager, &BleManager::deviceFound, this, &AirPodsTrayApp::bleDeviceFound);
         connect(m_deviceInfo->getBattery(), &Battery::primaryChanged, this, &AirPodsTrayApp::primaryChanged);
+        connect(m_deviceInfo->getEarDetection(), &EarDetection::statusChanged, this, &AirPodsTrayApp::checkCaseRemoval);
         
 #ifdef Q_OS_LINUX
         connect(m_systemSleepMonitor, &SystemSleepMonitor::systemGoingToSleep, this, &AirPodsTrayApp::onSystemGoingToSleep);
@@ -729,6 +730,16 @@ private slots:
         connect(localSocket, &AapSocket::connected, this, handleConnection);
         connect(localSocket, QOverload<AapSocket::SocketError>::of(&AapSocket::errorOccurred),
                 this, handleError);
+#ifdef Q_OS_WIN
+        // Clean up immediately when the channel drops (device went away), rather
+        // than waiting for the slower device-interface poll to notice.
+        connect(localSocket, &AapSocket::disconnected, this, [this, localSocket]() {
+            if (socket == localSocket) {
+                LOG_INFO("AAP channel dropped, handling disconnect");
+                onDeviceDisconnected(localSocket->peerAddress());
+            }
+        });
+#endif
 
         localSocket->connectToService(device.address(), QBluetoothUuid("74ec2172-0bad-4d01-8f77-997b2be0722a"));
         m_deviceInfo->setBluetoothAddress(device.address().toString());
@@ -975,6 +986,28 @@ private slots:
         }
     }
 
+    // Detect a pod being removed from the case (InCase -> out of case) so the UI
+    // can show the connect flyout, like iOS does when you take an AirPod out.
+    void checkCaseRemoval()
+    {
+        using Status = EarDetection::EarDetectionStatus;
+        auto *ed = m_deviceInfo->getEarDetection();
+        const Status p = ed->getprimaryStatus();
+        const Status s = ed->getsecondaryStatus();
+
+        const int inCaseCount = (p == Status::InCase ? 1 : 0) + (s == Status::InCase ? 1 : 0);
+        const bool anyOutOfCasePresent =
+            p == Status::InEar || p == Status::NotInEar ||
+            s == Status::InEar || s == Status::NotInEar;
+
+        // A pod just left the case (count dropped) and is now in hand/ear.
+        if (inCaseCount < m_prevInCaseCount && anyOutOfCasePresent)
+        {
+            emit airPodsTakenOutOfCase();
+        }
+        m_prevInCaseCount = inCaseCount;
+    }
+
 public:
     void handleMediaStateChange(MediaController::MediaState state) {
         if (state == MediaController::MediaState::Playing) {
@@ -1064,6 +1097,7 @@ signals:
     void modelChanged();
     void primaryChanged();
     void airPodsStatusChanged();
+    void airPodsTakenOutOfCase();
     void earDetectionBehaviorChanged(int behavior);
     void crossDeviceEnabledChanged(bool enabled);
     void notificationsEnabledChanged(bool enabled);
@@ -1083,6 +1117,7 @@ private:
     QSettings *m_settings;
     AutoStartManager *m_autoStartManager;
     int m_retryAttempts = 3;
+    int m_prevInCaseCount = 0;
     bool m_hideOnStart = false;
     DeviceInfo *m_deviceInfo;
     BleManager *m_bleManager;

@@ -11,6 +11,31 @@
 #include <winrt/Windows.Media.Control.h>
 #include <thread>
 
+// IPolicyConfig is an undocumented COM interface used to set the default audio
+// endpoint (the documented MMDevice API can read the default but not change it).
+// Only SetDefaultEndpoint is needed here; other vtable slots are stubbed so the
+// layout matches.
+interface DECLSPEC_UUID("f8679f50-850a-41cf-9c72-430f290290c8") IPolicyConfig;
+class DECLSPEC_UUID("870af99c-171d-4f9e-af0d-e63df40c2bc9") CPolicyConfigClient;
+
+MIDL_INTERFACE("f8679f50-850a-41cf-9c72-430f290290c8")
+IPolicyConfig : public IUnknown
+{
+public:
+    virtual HRESULT STDMETHODCALLTYPE GetMixFormat(PCWSTR, void **) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetDeviceFormat(PCWSTR, INT, void **) = 0;
+    virtual HRESULT STDMETHODCALLTYPE ResetDeviceFormat(PCWSTR) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetDeviceFormat(PCWSTR, void *, void *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetProcessingPeriod(PCWSTR, INT, void *, void *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetProcessingPeriod(PCWSTR, void *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetShareMode(PCWSTR, void *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetShareMode(PCWSTR, void *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetPropertyValue(PCWSTR, const PROPERTYKEY &, PROPVARIANT *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetPropertyValue(PCWSTR, const PROPERTYKEY &, PROPVARIANT *) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetDefaultEndpoint(PCWSTR wszDeviceId, ERole eRole) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetEndpointVisibility(PCWSTR, INT) = 0;
+};
+
 using namespace winrt;
 using namespace winrt::Windows::Media::Control;
 
@@ -333,11 +358,92 @@ QString WindowsAudioController::getDeviceFriendlyName(void *devicePtr)
 
 bool WindowsAudioController::setDefaultAudioDevice(const QString &deviceId)
 {
-    // Setting default audio device on Windows requires using PolicyConfig COM interface
-    // which is undocumented. For now, this is a placeholder.
+#ifdef Q_OS_WIN
+    if (deviceId.isEmpty())
+        return false;
+
+    IPolicyConfig *policyConfig = nullptr;
+    HRESULT hr = CoCreateInstance(__uuidof(CPolicyConfigClient), nullptr, CLSCTX_ALL,
+                                  __uuidof(IPolicyConfig), (void **)&policyConfig);
+    if (FAILED(hr) || !policyConfig)
+    {
+        LOG_ERROR("Failed to create IPolicyConfig");
+        return false;
+    }
+
+    std::wstring idW = deviceId.toStdWString();
+    // Set the device as default for all three roles (media, console, comms).
+    bool ok = true;
+    for (ERole role : {eConsole, eMultimedia, eCommunications})
+    {
+        HRESULT r = policyConfig->SetDefaultEndpoint(idW.c_str(), role);
+        if (FAILED(r))
+            ok = false;
+    }
+
+    policyConfig->Release();
+    return ok;
+#else
     Q_UNUSED(deviceId);
-    LOG_WARN("setDefaultAudioDevice not implemented on Windows");
     return false;
+#endif
+}
+
+bool WindowsAudioController::makeAirPodsDefaultOutput(const QString &macAddress)
+{
+#ifdef Q_OS_WIN
+    if (!m_initialized || !m_deviceEnumerator)
+        return false;
+
+    IMMDeviceCollection *deviceCollection = nullptr;
+    HRESULT hr = m_deviceEnumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &deviceCollection);
+    if (FAILED(hr) || !deviceCollection)
+        return false;
+
+    UINT count = 0;
+    deviceCollection->GetCount(&count);
+
+    QString stereoId;   // preferred: an AirPods endpoint that isn't hands-free
+    QString fallbackId; // any AirPods endpoint
+    for (UINT i = 0; i < count; ++i)
+    {
+        IMMDevice *device = nullptr;
+        if (FAILED(deviceCollection->Item(i, &device)) || !device)
+            continue;
+
+        const QString name = getDeviceFriendlyName(device);
+        if (name.contains("AirPods", Qt::CaseInsensitive) ||
+            (!macAddress.isEmpty() && name.contains(macAddress, Qt::CaseInsensitive)))
+        {
+            LPWSTR id = nullptr;
+            if (SUCCEEDED(device->GetId(&id)))
+            {
+                const QString idStr = QString::fromWCharArray(id);
+                CoTaskMemFree(id);
+                if (fallbackId.isEmpty())
+                    fallbackId = idStr;
+                // Prefer the high-quality stereo endpoint over the hands-free one.
+                if (stereoId.isEmpty() &&
+                    !name.contains("Hands-Free", Qt::CaseInsensitive) &&
+                    !name.contains("Hands Free", Qt::CaseInsensitive))
+                {
+                    stereoId = idStr;
+                }
+            }
+        }
+        device->Release();
+    }
+    deviceCollection->Release();
+
+    const QString chosen = !stereoId.isEmpty() ? stereoId : fallbackId;
+    if (chosen.isEmpty())
+        return false; // endpoint not enumerated yet
+
+    return setDefaultAudioDevice(chosen);
+#else
+    Q_UNUSED(macAddress);
+    return false;
+#endif
 }
 
 int WindowsAudioController::getMediaPlaybackStatus()

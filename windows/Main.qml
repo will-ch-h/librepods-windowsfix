@@ -77,6 +77,10 @@ ApplicationWindow {
             }
             mainWindow.wasConnected = airPodsTrayApp.airpodsConnected
         }
+        // Also show it when a pod is taken out of the case.
+        function onAirPodsTakenOutOfCase() {
+            connectPopup.popUp()
+        }
     }
 
     Component {

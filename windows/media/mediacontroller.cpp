@@ -293,7 +293,41 @@ bool MediaController::restartWirePlumber() {
   }
 }
 
+#ifdef Q_OS_WIN
+namespace { constexpr int kMaxWinAudioRetries = 8; } // ~12s at 1.5s/attempt
+
+void MediaController::activateWindowsAudioOutput() {
+  if (!m_windowsAudio) {
+    return;
+  }
+  if (m_windowsAudio->makeAirPodsDefaultOutput(connectedDeviceMacAddress)) {
+    LOG_INFO("AirPods set as default Windows audio output");
+    m_deviceOutputName = getAudioDeviceName(); // now resolvable; also fixes pause gate
+    m_winAudioRetries = 0;
+    return;
+  }
+  // The audio endpoint lags the control channel after a reconnect; retry.
+  if (m_winAudioRetries >= kMaxWinAudioRetries) {
+    LOG_WARN("AirPods audio endpoint never appeared; giving up output takeover");
+    m_winAudioRetries = 0;
+    return;
+  }
+  m_winAudioRetries++;
+  if (!m_winAudioRetryTimer) {
+    m_winAudioRetryTimer = new QTimer(this);
+    m_winAudioRetryTimer->setSingleShot(true);
+    connect(m_winAudioRetryTimer, &QTimer::timeout, this, &MediaController::activateWindowsAudioOutput);
+  }
+  LOG_DEBUG("AirPods audio endpoint not ready, retry " << m_winAudioRetries << "/" << kMaxWinAudioRetries);
+  m_winAudioRetryTimer->start(1500);
+}
+#endif
+
 void MediaController::activateA2dpProfile() {
+#ifdef Q_OS_WIN
+  activateWindowsAudioOutput();
+  return;
+#else
   if (connectedDeviceMacAddress.isEmpty() || m_deviceOutputName.isEmpty()) {
     LOG_WARN("Connected device MAC address or output name is empty, cannot activate A2DP profile");
     return;
@@ -324,6 +358,7 @@ void MediaController::activateA2dpProfile() {
     LOG_ERROR("Failed to activate A2DP profile: " << preferredProfile);
   }
   LOG_INFO("A2DP profile activated successfully");
+#endif
 }
 
 void MediaController::removeAudioOutputDevice() {
@@ -342,6 +377,9 @@ void MediaController::setConnectedDeviceMacAddress(const QString &macAddress) {
   connectedDeviceMacAddress = macAddress;
   m_deviceOutputName = getAudioDeviceName();
   m_cachedA2dpProfile.clear();
+#ifdef Q_OS_WIN
+  m_winAudioRetries = 0; // fresh retry budget for this connection
+#endif
   LOG_INFO("Device output name set to: " << m_deviceOutputName);
 }
 

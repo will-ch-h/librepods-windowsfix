@@ -165,6 +165,17 @@ void WinL2capSocket::startReader()
             QMetaObject::invokeMethod(this, [this]() { emit readyRead(); }, Qt::QueuedConnection);
         }
         CloseHandle(ov.hEvent);
+
+        // If we left the loop while still "running", it wasn't a deliberate
+        // close()/cancel — the device went away. Report it so the app cleans up
+        // and can reconnect when the AirPods come back. exchange() ensures only
+        // the device-gone path (not stopReader) fires this.
+        if (m_running.exchange(false)) {
+            QMetaObject::invokeMethod(this, [this]() {
+                m_state = UnconnectedState;
+                emit disconnected();
+            }, Qt::QueuedConnection);
+        }
     });
 }
 

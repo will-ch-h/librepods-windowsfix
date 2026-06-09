@@ -37,6 +37,11 @@ public:
     // True if the current default render endpoint is the AirPods.
     bool isDefaultOutputAirPods();
 
+    // Make the AirPods the default playback device (all roles). Returns false if
+    // no AirPods render endpoint is enumerated yet (e.g. just after reconnect),
+    // so the caller can retry. Prefers the stereo endpoint over hands-free.
+    bool makeAirPodsDefaultOutput(const QString &macAddress);
+
 private:
 #ifdef Q_OS_WIN
     IMMDeviceEnumerator *m_deviceEnumerator;
