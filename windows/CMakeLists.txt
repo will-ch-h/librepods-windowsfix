@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Qt6 REQUIRED COMPONENTS Quick Widgets Bluetooth Multimedia)
 find_package(OpenSSL REQUIRED)
 
-qt_standard_project_setup()
+qt_standard_project_setup(REQUIRES 6.5)
 
 qt_add_executable(librepods-windows
     main.cpp
@@ -40,6 +40,8 @@ qt_add_executable(librepods-windows
     eardetection.hpp
     windowssleepmonitor.hpp
     windowssleepmonitor.cpp
+    winl2capsocket.h
+    winl2capsocket.cpp
 )
 
 qt_add_qml_module(librepods-windows
@@ -83,6 +85,7 @@ target_link_libraries(librepods-windows
     Ole32
     User32
     PowrProf
+    SetupAPI
 )
 
 # Set Windows subsystem to console for debugging, change to WINDOWS for release

@@ -31,6 +31,17 @@
 #include "systemsleepmonitor.hpp"
 #elif defined(Q_OS_WIN)
 #include "windowssleepmonitor.hpp"
+#include "winl2capsocket.h"
+#endif
+
+// The AirPods AAP control channel runs over L2CAP. Qt's QBluetoothSocket
+// supports L2CAP on Linux (BlueZ) but not on Windows (the MS stack blocks
+// user-mode L2CAP), so on Windows we route through a kernel profile driver
+// via WinL2capSocket, which is API-compatible with the subset used here.
+#ifdef Q_OS_WIN
+using AapSocket = WinL2capSocket;
+#else
+using AapSocket = QBluetoothSocket;
 #endif
 
 using namespace AirpodsTrayApp::Enums;
@@ -113,6 +124,20 @@ public:
         monitor->checkAlreadyConnectedDevices();
         LOG_INFO("AirPodsTrayApp initialized");
 
+#ifdef Q_OS_WIN
+        // On Windows, detect AirPods via the AAP profile driver's device
+        // interface (QBluetoothLocalDevice/serviceUuids-based detection used on
+        // Linux does not work here). Each connected AirPods exposes one instance.
+        {
+            const QList<QBluetoothAddress> winPods = WinL2capSocket::connectedAirPods();
+            for (const QBluetoothAddress &address : winPods) {
+                LOG_INFO("Found connected AirPods via AAP driver: " << address.toString());
+                QBluetoothDeviceInfo device(address, "AirPods", 0);
+                connectToDevice(device);
+            }
+        }
+#endif
+
         QBluetoothLocalDevice localDevice;
 
         const QList<QBluetoothAddress> connectedDevices = localDevice.connectedDevices();
@@ -145,7 +170,7 @@ public:
         delete phoneSocket;
     }
 
-    bool areAirpodsConnected() const { return socket && socket->isOpen() && socket->state() == QBluetoothSocket::SocketState::ConnectedState; }
+    bool areAirpodsConnected() const { return socket && socket->isOpen() && socket->state() == AapSocket::SocketState::ConnectedState; }
     int earDetectionBehavior() const { return mediaController->getEarDetectionBehavior(); }
     bool crossDeviceEnabled() const { return CrossDevice.isEnabled; }
     AutoStartManager *autoStartManager() const { return m_autoStartManager; }
@@ -626,13 +651,13 @@ private slots:
             socket = nullptr;
         }
 
-        QBluetoothSocket *localSocket = new QBluetoothSocket(QBluetoothServiceInfo::L2capProtocol);
+        AapSocket *localSocket = new AapSocket(QBluetoothServiceInfo::L2capProtocol);
         socket = localSocket;
 
         // Connection handler
         auto handleConnection = [this, localSocket]()
         {
-            connect(localSocket, &QBluetoothSocket::readyRead, this, [this, localSocket]()
+            connect(localSocket, &AapSocket::readyRead, this, [this, localSocket]()
                     {
             QByteArray data = localSocket->readAll();
             QMetaObject::invokeMethod(this, "parseData", Qt::QueuedConnection, Q_ARG(QByteArray, data));
@@ -641,7 +666,7 @@ private slots:
         };
 
         // Error handler with retry
-        auto handleError = [this, device, localSocket](QBluetoothSocket::SocketError error)
+        auto handleError = [this, device, localSocket](AapSocket::SocketError error)
         {
             LOG_ERROR("Socket error: " << error << ", " << localSocket->errorString());
 
@@ -660,8 +685,8 @@ private slots:
             }
         };
 
-        connect(localSocket, &QBluetoothSocket::connected, this, handleConnection);
-        connect(localSocket, QOverload<QBluetoothSocket::SocketError>::of(&QBluetoothSocket::errorOccurred),
+        connect(localSocket, &AapSocket::connected, this, handleConnection);
+        connect(localSocket, QOverload<AapSocket::SocketError>::of(&AapSocket::errorOccurred),
                 this, handleError);
 
         localSocket->connectToService(device.address(), QBluetoothUuid("74ec2172-0bad-4d01-8f77-997b2be0722a"));
@@ -700,50 +725,8 @@ private slots:
             m_deviceInfo->setMagicAccEncKey(keys.magicAccEncKey);
             m_deviceInfo->saveToSettings(*m_settings);
         }
-        // Get CA state
-        else if (data.startsWith(AirPodsPackets::ConversationalAwareness::HEADER)) {
-            if (auto result = AirPodsPackets::ConversationalAwareness::parseState(data))
-            {
-                m_deviceInfo->setConversationalAwareness(result.value());
-                LOG_INFO("Conversational awareness state received: " << m_deviceInfo->conversationalAwareness());
-            }
-        }
-        // Hearing Aid state
-        else if (data.startsWith(AirPodsPackets::HearingAid::HEADER)) {
-            if (auto result = AirPodsPackets::HearingAid::parseState(data))
-            {
-                m_deviceInfo->setHearingAidEnabled(result.value());
-                LOG_INFO("Hearing aid state received: " << m_deviceInfo->hearingAidEnabled());
-            }
-        }
-        // Noise Control Mode
-        else if (data.size() == 11 && data.startsWith(AirPodsPackets::NoiseControl::HEADER))
-        {
-            if (auto value = AirPodsPackets::NoiseControl::parseMode(data))
-            {
-                m_deviceInfo->setNoiseControlMode(value.value());
-                LOG_INFO("Noise control mode received: " << m_deviceInfo->noiseControlMode());
-            }
-        }
-        // Ear Detection
-        else if (data.size() == 8 && data.startsWith(AirPodsPackets::Parse::EAR_DETECTION))
-        {
-            m_deviceInfo->getEarDetection()->parseData(data);
-            mediaController->handleEarDetection(m_deviceInfo->getEarDetection());
-        }
-        // Battery Status
-        else if ((data.size() == 22 || data.size() == 12) && data.startsWith(AirPodsPackets::Parse::BATTERY_STATUS))
-        {
-            m_deviceInfo->getBattery()->parsePacket(data);
-            m_deviceInfo->updateBatteryStatus();
-            LOG_INFO("Battery status: " << m_deviceInfo->batteryStatus());
-        }
-        // Conversational Awareness Data
-        else if (data.size() == 10 && data.startsWith(AirPodsPackets::ConversationalAwareness::DATA_HEADER))
-        {
-            LOG_INFO("Received conversational awareness data");
-            mediaController->handleConversationalAwareness(data);
-        }
+        // Metadata (device name / model / serial) — distinctive header, must be
+        // matched before the generic control-command dispatch below.
         else if (data.startsWith(AirPodsPackets::Parse::METADATA))
         {
             parseMetadata(data);
@@ -756,11 +739,68 @@ private slots:
             m_bleManager->stopScan();
             emit airPodsStatusChanged();
         }
-        else if (data.startsWith(AirPodsPackets::OneBudANCMode::HEADER)) {
-            if (auto value = AirPodsPackets::OneBudANCMode::parseState(data))
+        // Battery Status
+        else if ((data.size() == 22 || data.size() == 12) && data.startsWith(AirPodsPackets::Parse::BATTERY_STATUS))
+        {
+            m_deviceInfo->getBattery()->parsePacket(data);
+            m_deviceInfo->updateBatteryStatus();
+            LOG_INFO("Battery status: " << m_deviceInfo->batteryStatus());
+        }
+        // Ear Detection
+        else if (data.size() == 8 && data.startsWith(AirPodsPackets::Parse::EAR_DETECTION))
+        {
+            m_deviceInfo->getEarDetection()->parseData(data);
+            mediaController->handleEarDetection(m_deviceInfo->getEarDetection());
+        }
+        // Conversational Awareness streaming data
+        else if (data.size() == 10 && data.startsWith(AirPodsPackets::ConversationalAwareness::DATA_HEADER))
+        {
+            LOG_INFO("Received conversational awareness data");
+            mediaController->handleConversationalAwareness(data);
+        }
+        // Generic control-command notification: 04 00 04 00 09 00 <id> <value> ...
+        // We dispatch on the command-id byte using the stable ControlCommand
+        // prefix. The per-setting HEADER constants (ConversationalAwareness,
+        // OneBudANCMode, ... built from a template static) can end up empty due
+        // to static-initialization order, and QByteArray::startsWith("") is
+        // always true, which previously caused the first such branch to swallow
+        // every packet (metadata, battery, ...). Routing by id avoids that.
+        else if (data.size() >= 8 && data.startsWith(ControlCommand::HEADER))
+        {
+            const quint8 id = static_cast<quint8>(data.at(6));
+            switch (id)
             {
-                m_deviceInfo->setOneBudANCMode(value.value());
-                LOG_INFO("One Bud ANC mode received: " << m_deviceInfo->oneBudANCMode());
+            case 0x0D: // Noise control mode
+                if (auto value = AirPodsPackets::NoiseControl::parseMode(data))
+                {
+                    m_deviceInfo->setNoiseControlMode(value.value());
+                    LOG_INFO("Noise control mode received: " << m_deviceInfo->noiseControlMode());
+                }
+                break;
+            case 0x28: // Conversational awareness
+                if (auto result = AirPodsPackets::ConversationalAwareness::parseState(data))
+                {
+                    m_deviceInfo->setConversationalAwareness(result.value());
+                    LOG_INFO("Conversational awareness state received: " << m_deviceInfo->conversationalAwareness());
+                }
+                break;
+            case 0x2C: // Hearing aid
+                if (auto result = AirPodsPackets::HearingAid::parseState(data))
+                {
+                    m_deviceInfo->setHearingAidEnabled(result.value());
+                    LOG_INFO("Hearing aid state received: " << m_deviceInfo->hearingAidEnabled());
+                }
+                break;
+            case 0x1B: // One-bud ANC
+                if (auto value = AirPodsPackets::OneBudANCMode::parseState(data))
+                {
+                    m_deviceInfo->setOneBudANCMode(value.value());
+                    LOG_INFO("One Bud ANC mode received: " << m_deviceInfo->oneBudANCMode());
+                }
+                break;
+            default:
+                LOG_DEBUG("Unhandled control-command id " << id << ": " << data.toHex());
+                break;
             }
         }
         else
@@ -992,7 +1032,7 @@ signals:
     void hearingAidEnabledChanged(bool enabled);
 
 private:
-    QBluetoothSocket *socket = nullptr;
+    AapSocket *socket = nullptr;
     QBluetoothSocket *phoneSocket = nullptr;
     QByteArray lastBatteryStatus;
     QByteArray lastEarDetectionStatus;

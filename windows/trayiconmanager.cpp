@@ -37,7 +37,9 @@ void TrayIconManager::showNotification(const QString &title, const QString &mess
 void TrayIconManager::updateBatteryStatus(const QString &status)
 {
     trayIcon->setToolTip("Battery Status: " + status);
-    updateIconFromBattery(status);
+    // Keep the AirPods icon in the tray; battery is shown via the tooltip
+    // (hover) rather than drawn as a percentage over the icon.
+    trayIcon->setIcon(QIcon(":/icons/assets/airpods.png"));
 }
 
 void TrayIconManager::updateNoiseControlState(NoiseControlMode mode)
