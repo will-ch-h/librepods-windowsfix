@@ -2,8 +2,8 @@
 This fork only contains files for a windows "port" of librepods
 
 Thanks to:
-The Librepods project (https://github.com/kavishdevar/librepods)
-Tblob18 (https://github.com/Tblob18/librepods-windows)
+- The Librepods project (https://github.com/kavishdevar/librepods)
+- Tblob18 (https://github.com/Tblob18/librepods-windows)
 
 This fork successfully allows for librepods to work on windows with the ability to change listening modes and more.
 
