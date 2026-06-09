@@ -1,5 +1,5 @@
 # Librepods-WindowsFix
-This fork only contains files for a windows "port" of librepods
+This fork only contains files for a windows "bridge" of librepods
 
 Thanks to:
 - The Librepods project (https://github.com/kavishdevar/librepods)
