@@ -13,6 +13,10 @@
 #include <QTimer>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QFile>
+#include <QDir>
+#include <QTextStream>
+#include <QDateTime>
 
 #include "airpods_packets.h"
 #include "logger.h"
@@ -260,8 +264,9 @@ public slots:
     void setConversationalAwareness(bool enabled)
     {
         LOG_INFO("Setting conversational awareness to: " << (enabled ? "enabled" : "disabled"));
-        QByteArray packet = enabled ? AirPodsPackets::ConversationalAwareness::ENABLED
-                                    : AirPodsPackets::ConversationalAwareness::DISABLED;
+        // Build at call time: the namespace ENABLED/DISABLED statics can be empty
+        // due to static-initialization order (they copy a template static).
+        QByteArray packet = ControlCommand::createCommand(0x28, enabled ? 0x01 : 0x02);
 
         writePacketToSocket(packet, "Conversational awareness packet written: ");
         m_deviceInfo->setConversationalAwareness(enabled);
@@ -276,8 +281,8 @@ public slots:
         }
 
         LOG_INFO("Setting One Bud ANC mode to: " << (enabled ? "enabled" : "disabled"));
-        QByteArray packet = enabled ? AirPodsPackets::OneBudANCMode::ENABLED
-                                    : AirPodsPackets::OneBudANCMode::DISABLED;
+        // Build at call time to avoid empty static-init-order packets (see setConversationalAwareness).
+        QByteArray packet = ControlCommand::createCommand(0x1B, enabled ? 0x01 : 0x02);
 
         if (writePacketToSocket(packet, "One Bud ANC mode packet written: "))
         {
@@ -427,8 +432,9 @@ public slots:
     void setHearingAidEnabled(bool enabled)
     {
         LOG_INFO("Setting hearing aid to: " << (enabled ? "enabled" : "disabled"));
-        QByteArray packet = enabled ? AirPodsPackets::HearingAid::ENABLED
-                                    : AirPodsPackets::HearingAid::DISABLED;
+        // Build at call time to avoid empty static-init-order packets (see setConversationalAwareness).
+        QByteArray packet = enabled ? ControlCommand::createCommand(0x2C, 0x01, 0x01)
+                                    : ControlCommand::createCommand(0x2C, 0x02, 0x02);
 
         writePacketToSocket(packet, "Hearing aid packet written: ");
         m_deviceInfo->setHearingAidEnabled(enabled);
@@ -1095,25 +1101,38 @@ int main(int argc, char *argv[]) {
     qInstallMessageHandler([](QtMsgType type, const QMessageLogContext &, const QString &msg) {
         QByteArray localMsg = msg.toLocal8Bit();
         FILE *output = (type == QtDebugMsg || type == QtInfoMsg) ? stdout : stderr;
-        
+
+        const char *level = "INFO";
         switch (type) {
-        case QtDebugMsg:
-            fprintf(output, "[DEBUG] %s\n", localMsg.constData());
-            break;
-        case QtInfoMsg:
-            fprintf(output, "[INFO] %s\n", localMsg.constData());
-            break;
-        case QtWarningMsg:
-            fprintf(output, "[WARNING] %s\n", localMsg.constData());
-            break;
-        case QtCriticalMsg:
-            fprintf(output, "[ERROR] %s\n", localMsg.constData());
-            break;
-        case QtFatalMsg:
-            fprintf(output, "[FATAL] %s\n", localMsg.constData());
-            abort();
+        case QtDebugMsg:    level = "DEBUG";   break;
+        case QtInfoMsg:     level = "INFO";    break;
+        case QtWarningMsg:  level = "WARNING"; break;
+        case QtCriticalMsg: level = "ERROR";   break;
+        case QtFatalMsg:    level = "FATAL";   break;
         }
+        fprintf(output, "[%s] %s\n", level, localMsg.constData());
         fflush(output);
+
+        // A WIN32 GUI app has no console, so also append to a log file we can
+        // inspect: %APPDATA%\LibrePods\librepods.log
+        static QFile logFile;
+        static bool inited = false;
+        if (!inited) {
+            inited = true;
+            QString dir = QString::fromLocal8Bit(qgetenv("APPDATA")) + "/LibrePods";
+            QDir().mkpath(dir);
+            logFile.setFileName(dir + "/librepods.log");
+            logFile.open(QIODevice::Append | QIODevice::Text);
+        }
+        if (logFile.isOpen()) {
+            QTextStream ts(&logFile);
+            ts << QDateTime::currentDateTime().toString("HH:mm:ss.zzz")
+               << " [" << level << "] " << msg << "\n";
+            ts.flush();
+        }
+
+        if (type == QtFatalMsg)
+            abort();
     });
 
     QSharedMemory sharedMemory;
