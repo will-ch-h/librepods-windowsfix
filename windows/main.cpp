@@ -136,6 +136,13 @@ public:
                 connectToDevice(device);
             }
         }
+
+        // Continuously watch for AirPods connecting/disconnecting at runtime,
+        // since the BluetoothMonitor is a no-op stub on Windows.
+        m_winConnPoller = new QTimer(this);
+        m_winConnPoller->setInterval(2000);
+        connect(m_winConnPoller, &QTimer::timeout, this, &AirPodsTrayApp::pollWindowsConnection);
+        m_winConnPoller->start();
 #endif
 
         QBluetoothLocalDevice localDevice;
@@ -564,6 +571,33 @@ private slots:
             tr("Your AirPods have been disconnected"));
         trayManager->resetTrayIcon();
     }
+
+#ifdef Q_OS_WIN
+    // Windows has no working BlueZ-style connect/disconnect monitor, so poll the
+    // AAP driver's device interface to reconcile our connection state. This
+    // detects both AirPods connecting after the app launched and AirPods
+    // disconnecting while the app is running.
+    void pollWindowsConnection()
+    {
+        // Don't interfere while a connection attempt is already in flight.
+        if (socket && socket->state() == AapSocket::ConnectingState)
+            return;
+
+        const QList<QBluetoothAddress> pods = WinL2capSocket::connectedAirPods();
+        const bool present = !pods.isEmpty();
+
+        if (present && !areAirpodsConnected())
+        {
+            LOG_INFO("Poller: AirPods present but not connected, connecting to " << pods.first().toString());
+            connectToDevice(QBluetoothDeviceInfo(pods.first(), "AirPods", 0));
+        }
+        else if (!present && socket && socket->isOpen())
+        {
+            LOG_INFO("Poller: AirPods no longer present, handling disconnect");
+            onDeviceDisconnected(socket->peerAddress());
+        }
+    }
+#endif
 
     void bluezDeviceDisconnected(const QString &address, const QString &name)
     {
@@ -1049,6 +1083,7 @@ private:
     SystemSleepMonitor *m_systemSleepMonitor = nullptr;
 #elif defined(Q_OS_WIN)
     WindowsSleepMonitor *m_systemSleepMonitor = nullptr;
+    QTimer *m_winConnPoller = nullptr;
 #endif
     QString m_phoneMacStatus;
 };

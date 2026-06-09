@@ -133,7 +133,11 @@ void MediaController::handleConversationalAwareness(const QByteArray &data) {
   LOG_INFO("Conversational awareness: " << (lowered ? "enabled" : "disabled"));
 
   if (lowered) {
-    if (initialVolume == -1 && isActiveOutputDeviceAirPods()) {
+    if (!isActiveOutputDeviceAirPods()) {
+      LOG_DEBUG("AirPods not the active output, skipping conversational awareness ducking");
+      return;
+    }
+    if (initialVolume == -1) {
       QString defaultSink = getDefaultSink();
       initialVolume = getSinkVolume(defaultSink);
       if (initialVolume == -1) {

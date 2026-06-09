@@ -149,7 +149,10 @@ namespace AirPodsPackets
     namespace Connection
     {
         static const QByteArray HANDSHAKE = QByteArray::fromHex("00000400010002000000000000000000");
-        static const QByteArray SET_SPECIFIC_FEATURES = QByteArray::fromHex("040004004d00d700000000000000");
+        // Offset-6 byte is a feature bitmask. 0xff enables conversational awareness
+        // while audio is playing and Adaptive Transparency (ANC->transparency rollover);
+        // see AAP Definitions.md. 0xd7 leaves those bits (0x20/0x08) cleared.
+        static const QByteArray SET_SPECIFIC_FEATURES = QByteArray::fromHex("040004004d00ff00000000000000");
         static const QByteArray REQUEST_NOTIFICATIONS = QByteArray::fromHex("040004000f00ffffffffff");
         static const QByteArray AIRPODS_DISCONNECTED = QByteArray::fromHex("00010000");
     }
