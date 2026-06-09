@@ -1,4 +1,4 @@
-# Librepods-WindowsFix
+# Librepods-WindowsBridge
 This fork only contains files for a windows "bridge" of librepods
 
 Thanks to:
