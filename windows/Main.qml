@@ -60,6 +60,25 @@ ApplicationWindow {
         source: "qrc:/icons/assets/fonts/SF-Symbols-6.ttf"
     }
 
+    // Bottom-of-screen "AirPods connected" flyout, styled like the Win11 OSD.
+    AirPodsConnectPopup {
+        id: connectPopup
+    }
+
+    // Show the flyout only on a genuine connect (false -> true), not every time
+    // the app launches while the AirPods happen to already be connected.
+    property bool wasConnected: false
+    Component.onCompleted: mainWindow.wasConnected = airPodsTrayApp.airpodsConnected
+    Connections {
+        target: airPodsTrayApp
+        function onAirPodsStatusChanged() {
+            if (airPodsTrayApp.airpodsConnected && !mainWindow.wasConnected) {
+                connectPopup.popUp()
+            }
+            mainWindow.wasConnected = airPodsTrayApp.airpodsConnected
+        }
+    }
+
     Component {
         id: mainPage
         Item {

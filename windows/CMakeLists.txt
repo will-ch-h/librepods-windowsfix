@@ -54,6 +54,7 @@ qt_add_qml_module(librepods-windows
         PodColumn.qml
         Icon.qml
         KeysQRDialog.qml
+        AirPodsConnectPopup.qml
 )
 
 # Add the resource file
