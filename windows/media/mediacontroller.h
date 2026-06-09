@@ -72,6 +72,7 @@ private:
   bool isProfileAvailable(const QString &cardName, const QString &profileName);
 
   QStringList pausedByAppServices;
+  bool m_pausedByEarDetection = false;
   int initialVolume = -1;
   QString connectedDeviceMacAddress;
   EarDetectionBehavior earDetectionBehavior = PauseWhenOneRemoved;

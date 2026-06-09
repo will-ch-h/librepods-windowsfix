@@ -86,6 +86,8 @@ target_link_libraries(librepods-windows
     User32
     PowrProf
     SetupAPI
+    # C++/WinRT runtime (System Media Transport Controls for media play/pause)
+    WindowsApp
 )
 
 # Set Windows subsystem to console for debugging, change to WINDOWS for release

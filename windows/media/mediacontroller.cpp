@@ -81,7 +81,12 @@ void MediaController::handleEarDetection(EarDetection *earDetection)
     activateA2dpProfile();
 
     // Resume if conditions are met and we previously paused
-    if (shouldResume && !pausedByAppServices.isEmpty() && isActiveOutputDeviceAirPods())
+#ifdef Q_OS_WIN
+    bool wasPausedByUs = m_pausedByEarDetection;
+#else
+    bool wasPausedByUs = !pausedByAppServices.isEmpty();
+#endif
+    if (shouldResume && wasPausedByUs && isActiveOutputDeviceAirPods())
     {
       play();
     }
@@ -111,9 +116,15 @@ void MediaController::followMediaChanges() {
 }
 
 bool MediaController::isActiveOutputDeviceAirPods() {
+#ifdef Q_OS_WIN
+  // Windows audio endpoint IDs are device-interface GUIDs that don't contain the
+  // MAC address, so match on the default render endpoint's friendly name instead.
+  return m_windowsAudio && m_windowsAudio->isDefaultOutputAirPods();
+#else
   QString defaultSink = getDefaultSink();
   LOG_DEBUG("Default sink: " << defaultSink);
   return defaultSink.contains(connectedDeviceMacAddress);
+#endif
 }
 
 void MediaController::handleConversationalAwareness(const QByteArray &data) {
@@ -263,7 +274,23 @@ MediaController::MediaState MediaController::mediaStateFromPlayerctlOutput(
 
 MediaController::MediaState MediaController::getCurrentMediaState() const
 {
+#ifdef Q_OS_WIN
+  if (m_windowsAudio)
+  {
+    switch (m_windowsAudio->getMediaPlaybackStatus())
+    {
+    case 0:
+      return Playing;
+    case 1:
+      return Paused;
+    default:
+      return Stopped;
+    }
+  }
+  return Stopped;
+#else
   return mediaStateFromPlayerctlOutput(PlayerStatusWatcher::getCurrentPlaybackStatus(""));
+#endif
 }
 
 QStringList MediaController::getPlayingMediaPlayers()
@@ -309,13 +336,30 @@ QStringList MediaController::getPlayingMediaPlayers()
 
 void MediaController::play()
 {
+#ifdef Q_OS_WIN
+  if (!m_pausedByEarDetection)
+  {
+    LOG_INFO("Nothing to resume");
+    return;
+  }
+
+  if (m_windowsAudio && m_windowsAudio->playMedia())
+  {
+    LOG_INFO("Resumed playback via Windows SMTC");
+  }
+  else
+  {
+    LOG_WARN("Failed to resume playback via Windows SMTC");
+  }
+  m_pausedByEarDetection = false;
+  return;
+#else
   if (pausedByAppServices.isEmpty())
   {
     LOG_INFO("No services to resume");
     return;
   }
 
-#ifndef Q_OS_WIN
   QDBusConnection bus = QDBusConnection::sessionBus();
   int resumedCount = 0;
 
@@ -354,16 +398,23 @@ void MediaController::play()
   {
     LOG_ERROR("Failed to resume any media players via DBus");
   }
-#else
-  // On Windows, use Windows Media Control API
-  LOG_DEBUG("Media playback resume not fully implemented on Windows yet");
-  pausedByAppServices.clear();
 #endif
 }
 
 void MediaController::pause()
 {
-#ifndef Q_OS_WIN
+#ifdef Q_OS_WIN
+  if (m_windowsAudio && m_windowsAudio->pauseMedia())
+  {
+    LOG_INFO("Paused playback via Windows SMTC");
+    m_pausedByEarDetection = true;
+  }
+  else
+  {
+    LOG_WARN("Failed to pause playback via Windows SMTC");
+  }
+  return;
+#else
   QDBusConnection bus = QDBusConnection::sessionBus();
   QStringList services = bus.interface()->registeredServiceNames().value();
 
@@ -417,9 +468,6 @@ void MediaController::pause()
   {
     LOG_INFO("No playing media players found to pause");
   }
-#else
-  // On Windows, use Windows Media Control API
-  LOG_DEBUG("Media playback pause not fully implemented on Windows yet");
 #endif
 }
 

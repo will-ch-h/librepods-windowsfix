@@ -6,6 +6,41 @@
 #include <Mmdeviceapi.h>
 #include <Functiondiscoverykeys_devpkey.h>
 #include <Propvarutil.h>
+
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Media.Control.h>
+#include <thread>
+
+using namespace winrt;
+using namespace winrt::Windows::Media::Control;
+
+namespace
+{
+// The Qt UI thread runs in an STA, where blocking on a WinRT async operation
+// with .get() can deadlock. Run the WinRT work on a short-lived MTA thread so
+// the blocking wait is safe. These calls are infrequent (only on ear-detection
+// events), so the cost of spinning up a thread is negligible.
+template <typename Fn>
+auto runOnMtaThread(Fn fn) -> decltype(fn())
+{
+    using Ret = decltype(fn());
+    Ret result{};
+    std::thread t([&]()
+    {
+        winrt::init_apartment(winrt::apartment_type::multi_threaded);
+        try
+        {
+            result = fn();
+        }
+        catch (...)
+        {
+        }
+        winrt::uninit_apartment();
+    });
+    t.join();
+    return result;
+}
+} // namespace
 #endif
 
 WindowsAudioController::WindowsAudioController(QObject *parent)
@@ -303,4 +338,111 @@ bool WindowsAudioController::setDefaultAudioDevice(const QString &deviceId)
     Q_UNUSED(deviceId);
     LOG_WARN("setDefaultAudioDevice not implemented on Windows");
     return false;
+}
+
+int WindowsAudioController::getMediaPlaybackStatus()
+{
+#ifdef Q_OS_WIN
+    return runOnMtaThread([]() -> int
+    {
+        try
+        {
+            auto manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().get();
+            auto session = manager.GetCurrentSession();
+            if (!session)
+            {
+                return -1;
+            }
+
+            auto status = session.GetPlaybackInfo().PlaybackStatus();
+            using Status = GlobalSystemMediaTransportControlsSessionPlaybackStatus;
+            if (status == Status::Playing)
+            {
+                return 0;
+            }
+            if (status == Status::Paused)
+            {
+                return 1;
+            }
+            return 2;
+        }
+        catch (...)
+        {
+            return -1;
+        }
+    });
+#else
+    return -1;
+#endif
+}
+
+bool WindowsAudioController::pauseMedia()
+{
+#ifdef Q_OS_WIN
+    return runOnMtaThread([]() -> bool
+    {
+        try
+        {
+            auto manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().get();
+            auto session = manager.GetCurrentSession();
+            if (!session)
+            {
+                return false;
+            }
+            return session.TryPauseAsync().get();
+        }
+        catch (...)
+        {
+            return false;
+        }
+    });
+#else
+    return false;
+#endif
+}
+
+bool WindowsAudioController::playMedia()
+{
+#ifdef Q_OS_WIN
+    return runOnMtaThread([]() -> bool
+    {
+        try
+        {
+            auto manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().get();
+            auto session = manager.GetCurrentSession();
+            if (!session)
+            {
+                return false;
+            }
+            return session.TryPlayAsync().get();
+        }
+        catch (...)
+        {
+            return false;
+        }
+    });
+#else
+    return false;
+#endif
+}
+
+bool WindowsAudioController::isDefaultOutputAirPods()
+{
+#ifdef Q_OS_WIN
+    if (!m_initialized || !m_deviceEnumerator)
+        return false;
+
+    IMMDevice *defaultDevice = nullptr;
+    HRESULT hr = m_deviceEnumerator->GetDefaultAudioEndpoint(
+        eRender, eConsole, &defaultDevice);
+    if (FAILED(hr) || !defaultDevice)
+        return false;
+
+    QString friendlyName = getDeviceFriendlyName(defaultDevice);
+    defaultDevice->Release();
+
+    return friendlyName.contains("AirPods", Qt::CaseInsensitive);
+#else
+    return false;
+#endif
 }
