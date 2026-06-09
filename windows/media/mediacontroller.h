@@ -10,6 +10,7 @@
 #endif
 
 class QProcess;
+class QTimer;
 class EarDetection;
 class PlayerStatusWatcher;
 
@@ -71,9 +72,23 @@ private:
   bool setCardProfile(const QString &cardName, const QString &profileName);
   bool isProfileAvailable(const QString &cardName, const QString &profileName);
 
+  // Drives a smooth conversational-awareness volume transition toward
+  // m_caTargetVolume (fast when ducking, gentle when restoring) instead of
+  // snapping to the coarse level the AirPods send.
+  void stepCaVolumeRamp();
+  // Fires after a quiet period to ramp the volume back to baseline. Held off
+  // (restarted) while the AirPods keep reporting non-speech so the duck bridges
+  // the short gaps between words/sentences.
+  void beginCaRestore();
+
   QStringList pausedByAppServices;
   bool m_pausedByEarDetection = false;
   int initialVolume = -1;
+  QTimer *m_caRampTimer = nullptr;
+  QTimer *m_caHoldTimer = nullptr;
+  int m_caTargetVolume = -1;   // desired sink volume %, -1 when idle
+  int m_caCurrentVolume = -1;  // our tracked current %, avoids re-reading the sink each tick
+  QString m_caSink;
   QString connectedDeviceMacAddress;
   EarDetectionBehavior earDetectionBehavior = PauseWhenOneRemoved;
   QString m_deviceOutputName;

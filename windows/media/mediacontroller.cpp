@@ -12,6 +12,7 @@
 #include <QDebug>
 #include <QProcess>
 #include <QThread>
+#include <QTimer>
 #include <QRegularExpression>
 
 #ifndef Q_OS_WIN
@@ -127,43 +128,122 @@ bool MediaController::isActiveOutputDeviceAirPods() {
 #endif
 }
 
-void MediaController::handleConversationalAwareness(const QByteArray &data) {
-  LOG_DEBUG("Handling conversational awareness data: " << data.toHex());
-  bool lowered = data[9] == 0x01;
-  LOG_INFO("Conversational awareness: " << (lowered ? "enabled" : "disabled"));
+namespace {
+// Volume to duck to while the wearer is speaking, as a fraction of their
+// original volume. The AirPods report a coarse "level" byte, but rather than
+// chase it (which makes the volume pump as the device ramps in/out per word)
+// we duck to a fixed depth and smooth the transitions ourselves.
+constexpr double kCaDuckFloor = 0.20;
 
-  if (lowered) {
-    if (!isActiveOutputDeviceAirPods()) {
-      LOG_DEBUG("AirPods not the active output, skipping conversational awareness ducking");
-      return;
-    }
+// Per-tick step sizes (percentage points): duck fast when speech starts,
+// restore gently so the music eases back rather than snapping.
+constexpr int kCaRampIntervalMs = 30;
+constexpr int kCaDuckStep = 9;     // ~0.27s to fully duck
+constexpr int kCaRestoreStep = 2;  // ~1.2s to fully restore
+
+// The AirPods drop back to "normal" between every word/sentence. Wait this long
+// with no fresh speech before actually restoring, so the duck bridges those
+// gaps instead of pumping up and down as you talk.
+constexpr int kCaHoldMs = 1200;
+} // namespace
+
+void MediaController::handleConversationalAwareness(const QByteArray &data) {
+  if (data.size() < 10) {
+    return;
+  }
+  const quint8 level = static_cast<quint8>(data[9]);
+  LOG_DEBUG("Handling conversational awareness data: " << data.toHex() << " level=" << level);
+
+  if (!isActiveOutputDeviceAirPods()) {
+    LOG_DEBUG("AirPods not the active output, ignoring conversational awareness");
+    return;
+  }
+
+  if (!m_caRampTimer) {
+    m_caRampTimer = new QTimer(this);
+    m_caRampTimer->setInterval(kCaRampIntervalMs);
+    connect(m_caRampTimer, &QTimer::timeout, this, &MediaController::stepCaVolumeRamp);
+  }
+  if (!m_caHoldTimer) {
+    m_caHoldTimer = new QTimer(this);
+    m_caHoldTimer->setSingleShot(true);
+    connect(m_caHoldTimer, &QTimer::timeout, this, &MediaController::beginCaRestore);
+  }
+
+  // Levels 0x01/0x02 mean the wearer is actively speaking; anything higher is
+  // the device ramping back toward normal (i.e. a pause/end of speech).
+  const bool speaking = (level <= 0x02);
+
+  if (speaking) {
+    // Capture the user's baseline volume the first time we duck.
     if (initialVolume == -1) {
-      QString defaultSink = getDefaultSink();
+      const QString defaultSink = getDefaultSink();
       initialVolume = getSinkVolume(defaultSink);
       if (initialVolume == -1) {
         LOG_ERROR("Failed to get initial volume");
         return;
       }
-      LOG_DEBUG("Initial volume: " << initialVolume << "%");
+      m_caCurrentVolume = initialVolume;
+      m_caSink = defaultSink;
+      LOG_DEBUG("CA: captured baseline volume " << initialVolume << "%");
     }
-    QString defaultSink = getDefaultSink();
-    int targetVolume = initialVolume * 0.20;
-    if (setSinkVolume(defaultSink, targetVolume)) {
-      LOG_INFO("Volume lowered to 0.20 of initial which is " << targetVolume << "%");
-    } else {
-      LOG_ERROR("Failed to lower volume");
+
+    // Active speech cancels any pending restore and ducks immediately.
+    m_caHoldTimer->stop();
+    m_caTargetVolume = qRound(initialVolume * kCaDuckFloor);
+    LOG_DEBUG("CA level " << level << " (speaking) -> duck target " << m_caTargetVolume << "%");
+    if (!m_caRampTimer->isActive()) {
+      m_caRampTimer->start();
     }
   } else {
-    if (initialVolume != -1 && isActiveOutputDeviceAirPods()) {
-      QString defaultSink = getDefaultSink();
-      if (setSinkVolume(defaultSink, initialVolume)) {
-        LOG_INFO("Volume restored to " << initialVolume << "%");
-      } else {
-        LOG_ERROR("Failed to restore volume");
-      }
-      initialVolume = -1;
+    // Not speaking. If nothing is ducked there's nothing to do; otherwise hold
+    // the current duck and (re)arm the restore timer. Every non-speech packet
+    // restarts it, so we only restore once speech has truly stopped.
+    if (initialVolume == -1) {
+      return;
     }
+    m_caHoldTimer->start(kCaHoldMs);
   }
+}
+
+void MediaController::beginCaRestore() {
+  if (initialVolume == -1) {
+    return;
+  }
+  LOG_DEBUG("CA: hold elapsed, restoring volume to baseline " << initialVolume << "%");
+  m_caTargetVolume = initialVolume;
+  if (!m_caRampTimer->isActive()) {
+    m_caRampTimer->start();
+  }
+}
+
+void MediaController::stepCaVolumeRamp() {
+  if (m_caTargetVolume < 0 || m_caCurrentVolume < 0) {
+    m_caRampTimer->stop();
+    return;
+  }
+
+  const int diff = m_caTargetVolume - m_caCurrentVolume;
+  if (diff == 0) {
+    // Reached the target; stop ticking until the next packet moves the target.
+    m_caRampTimer->stop();
+    // If we're fully back to the user's baseline, the conversation is over:
+    // release everything so the next one re-captures the current volume.
+    if (m_caTargetVolume >= initialVolume) {
+      LOG_INFO("CA: volume restored to baseline " << initialVolume << "%");
+      initialVolume = -1;
+      m_caTargetVolume = -1;
+      m_caCurrentVolume = -1;
+    }
+    return;
+  }
+
+  if (diff < 0) {
+    m_caCurrentVolume = qMax(m_caTargetVolume, m_caCurrentVolume - kCaDuckStep);
+  } else {
+    m_caCurrentVolume = qMin(m_caTargetVolume, m_caCurrentVolume + kCaRestoreStep);
+  }
+  setSinkVolume(m_caSink, m_caCurrentVolume);
 }
 
 bool MediaController::isA2dpProfileAvailable() {
