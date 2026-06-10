@@ -54,3 +54,4 @@ AirPods at the kernel level. (own driver in the works)
 - After first install the window will not close until clicked into
 - Sometimes airpods show up as disconnected and out of ear when connected
   > This happens when put back into and taken out of the case really quickly
+- Installed size is a little heavy (100+mb), try and slim down
