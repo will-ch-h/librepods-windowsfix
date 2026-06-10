@@ -252,6 +252,7 @@ ApplicationWindow {
         Page {
             id: settingsPageItem
             title: "Settings"
+            background: null // let the window's rounded card show through
 
             ScrollView {
                 anchors.fill: parent

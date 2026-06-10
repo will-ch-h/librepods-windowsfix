@@ -11,7 +11,7 @@ Control {
     property int currentIndex: 0
 
     // Colors using system palette
-    readonly property color backgroundColor: palette.light
+    readonly property color backgroundColor: palette.mid // darker grey track
     readonly property color selectedColor: palette.highlight
     readonly property color textColor: palette.buttonText
     readonly property color selectedTextColor: palette.highlightedText
@@ -22,7 +22,7 @@ Control {
     }
 
     // Internal properties
-    padding: 6
+    padding: 1.5
     implicitHeight: 32
     // Removed: implicitWidth: Math.max(200, model.length * 100)
 
@@ -60,8 +60,8 @@ Control {
                     color: root.currentIndex === segmentButton.index ? root.selectedTextColor : root.textColor
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
-                    leftPadding: 2
-                    rightPadding: 2
+                    leftPadding: 1
+                    rightPadding: 1
                     elide: Text.ElideRight
                 }
 

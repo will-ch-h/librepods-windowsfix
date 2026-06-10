@@ -24,6 +24,17 @@ public:
         // On Windows, we use the registry Run key
         m_registryKey = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
         m_appName = QCoreApplication::applicationName();
+        // If autostart is enabled but points at a stale path (e.g. the app was
+        // moved or rebuilt elsewhere), rewrite it to the current executable.
+        {
+            QSettings settings(m_registryKey, QSettings::NativeFormat);
+            if (settings.contains(m_appName) &&
+                !settings.value(m_appName).toString().contains(
+                    QDir::toNativeSeparators(QCoreApplication::applicationFilePath()), Qt::CaseInsensitive))
+            {
+                createAutoStartEntry();
+            }
+        }
 #else
         QString autostartDir = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) + "/autostart";
         QDir().mkpath(autostartDir);
@@ -68,7 +79,8 @@ private:
     {
 #ifdef Q_OS_WIN
         QSettings settings(m_registryKey, QSettings::NativeFormat);
-        QString appPath = QCoreApplication::applicationFilePath();
+        // Use native (backslash) separators for the Run key.
+        QString appPath = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
         // Add quotes around the path if it contains spaces
         if (appPath.contains(' '))
         {

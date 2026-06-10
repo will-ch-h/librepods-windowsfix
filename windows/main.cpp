@@ -564,9 +564,9 @@ private slots:
         emit airPodsStatusChanged();
 
         // Show system notification
-        trayManager->showNotification(
-            tr("AirPods Disconnected"),
-            tr("Your AirPods have been disconnected"));
+        //trayManager->showNotification(
+            //tr("AirPods Disconnected"),
+            //tr("Your AirPods have been disconnected"));
         trayManager->resetTrayIcon();
     }
 

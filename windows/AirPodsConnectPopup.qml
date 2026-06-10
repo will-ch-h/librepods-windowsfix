@@ -4,9 +4,6 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Window
 
-// A Windows 11 "volume OSD"-style flyout that briefly appears at the bottom
-// of the screen when the AirPods connect. Frameless, translucent, always on
-// top, no taskbar entry, and it never steals focus.
 Window {
     id: popup
 
@@ -87,8 +84,8 @@ Window {
                 spacing: 14
 
                 Image {
-                    Layout.preferredWidth: 56
-                    Layout.preferredHeight: 56
+                    Layout.preferredWidth: 46
+                    Layout.preferredHeight: 46
                     Layout.alignment: Qt.AlignVCenter
                     fillMode: Image.PreserveAspectFit
                     source: "qrc:/icons/assets/" + airPodsTrayApp.deviceInfo.podIcon
