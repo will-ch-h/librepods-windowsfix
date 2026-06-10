@@ -1,0 +1,66 @@
+name: Build Windows Installer
+
+# Build the installer on a version tag (e.g. v1.0.0) and attach it to the
+# GitHub Release. Also runnable manually from the Actions tab for testing.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          # Bluetooth ships in qtconnectivity; Multimedia in qtmultimedia.
+          # Qt Quick / Controls / FluentWinUI3 are part of the base install.
+          modules: "qtconnectivity qtmultimedia"
+          # Provides OpenSSL under $IQTA_TOOLS/OpenSSLv3/Win_x64.
+          tools: "tools_openssl_x64"
+
+      - name: Configure
+        shell: pwsh
+        run: >
+          cmake -S windows -B windows/build
+          -DCMAKE_BUILD_TYPE=Release
+          -DOPENSSL_ROOT_DIR="$env:IQTA_TOOLS/OpenSSLv3/Win_x64"
+
+      - name: Build and deploy bundle
+        run: cmake --build windows/build --config Release --target deploy
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Compile installer
+        shell: pwsh
+        working-directory: windows
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          if (-not $version) { $version = "0.0.0-dev" }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$version" installer.iss
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LibrePods-Setup
+          path: windows/Output/*.exe
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: windows/Output/*.exe
