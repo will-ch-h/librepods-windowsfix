@@ -104,3 +104,55 @@ install(TARGETS librepods-windows
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+# ---------------------------------------------------------------------------
+# Distribution: `cmake --build build --config Release --target deploy`
+# Produces a self-contained, runnable folder in build/dist (exe + Qt runtime +
+# QML modules + plugins + OpenSSL). Note: end users still need the AAP L2CAP
+# driver installed and test-signing enabled; this only bundles the app itself.
+# ---------------------------------------------------------------------------
+if(WIN32)
+    # Locate windeployqt next to qmake in the Qt install.
+    get_target_property(_qmake_exe Qt6::qmake IMPORTED_LOCATION)
+    get_filename_component(_qt_bin_dir "${_qmake_exe}" DIRECTORY)
+    find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${_qt_bin_dir}")
+
+    # Resolve the MSVC runtime DLLs (vcruntime140*, msvcp140) so the app runs on
+    # machines without the VC++ redistributable installed. windeployqt's
+    # --compiler-runtime doesn't reliably copy these.
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+    include(InstallRequiredSystemLibraries)
+
+    # OpenSSL runtime DLLs live in <openssl_root>/bin (the app links libcrypto
+    # directly for AES, so they must ship even though windeployqt won't copy them).
+    get_filename_component(_openssl_root "${OPENSSL_INCLUDE_DIR}" DIRECTORY)
+    file(GLOB _openssl_dlls
+        "${_openssl_root}/bin/libcrypto-*.dll"
+        "${_openssl_root}/bin/libssl-*.dll")
+
+    set(_deploy_dir "${CMAKE_BINARY_DIR}/dist")
+
+    if(WINDEPLOYQT_EXECUTABLE)
+        add_custom_target(deploy
+            COMMAND ${CMAKE_COMMAND} -E rm -rf "${_deploy_dir}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${_deploy_dir}"
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:librepods-windows>" "${_deploy_dir}/"
+            COMMAND "${WINDEPLOYQT_EXECUTABLE}" --release --compiler-runtime
+                    --qmldir "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${_deploy_dir}/librepods-windows.exe"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_openssl_dlls} "${_deploy_dir}/"
+            DEPENDS librepods-windows
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            COMMENT "Deploying a self-contained build to ${_deploy_dir}"
+            VERBATIM
+        )
+        if(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+            add_custom_command(TARGET deploy POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} "${_deploy_dir}/"
+                VERBATIM)
+        endif()
+    else()
+        message(WARNING "windeployqt not found; the 'deploy' target is unavailable.")
+    endif()
+endif()

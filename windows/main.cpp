@@ -6,6 +6,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QFont>
 #include <QBluetoothLocalDevice>
 #include <QBluetoothSocket>
 #include <QQuickWindow>
@@ -1209,6 +1210,15 @@ int main(int argc, char *argv[]) {
     // QML is loaded. Standard controls (Switch, Slider, ComboBox, Button) adopt
     // it automatically; hand-drawn components keep their custom look.
     QQuickStyle::setStyle("FluentWinUI3");
+
+    // Use the Windows 11 system UI font (Segoe UI Variable Text), falling back to
+    // Segoe UI on Windows 10 and earlier.
+    {
+        QFont uiFont;
+        uiFont.setFamilies({QStringLiteral("Segoe UI Variable Text"), QStringLiteral("Segoe UI")});
+        uiFont.setPointSize(9);
+        app.setFont(uiFont);
+    }
 
     QQmlApplicationEngine engine;
     qmlRegisterType<Battery>("me.kavishdevar.Battery", 1, 0, "Battery");
