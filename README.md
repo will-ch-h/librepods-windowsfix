@@ -22,5 +22,5 @@ AirPods at the kernel level. (own driver in the works)
 1. Install the **MagicAAP driver** in Windows **Test Mode**.
 
 > **Do NOT install the community-signed driver.** It relies on a code-signing exploit
-> (a leaked certificate plus an untrusted root CA) and opens a potential backdoor on your
+> (a leaked certificate) this opens a potential backdoor on your
 > system.
