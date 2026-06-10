@@ -5,7 +5,7 @@ Thanks to:
 - The Librepods project (https://github.com/kavishdevar/librepods)
 - Tblob18 (https://github.com/Tblob18/librepods-windows)
 
-This fork successfully allows for librepods to work on windows with the ability to change listening modes and more.
+This fork successfully allows for airpods to work on windows with the ability to change listening modes and more.
 
 Recomended for advanced/technical users only. 
 A custom driver is utilized that has to be used in Windows Test mode. 
