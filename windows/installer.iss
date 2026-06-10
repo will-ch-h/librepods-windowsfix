@@ -32,7 +32,7 @@ LicenseFile=..\LICENSE
 ; Remove the following line to run in administrative install mode (install for all users).
 PrivilegesRequired=lowest
 OutputDir=Output
-OutputBaseFilename=librepods-windowsbridge1.0.0-b-setup
+OutputBaseFilename=librepods-windowsbridge-{#MyAppVersion}-setup
 SolidCompression=yes
 WizardStyle=modern dynamic windows11
 

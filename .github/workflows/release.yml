@@ -30,7 +30,7 @@ jobs:
           # Qt Quick / Controls / FluentWinUI3 are part of the base install.
           modules: "qtconnectivity qtmultimedia"
           # Provides OpenSSL under $IQTA_TOOLS/OpenSSLv3/Win_x64.
-          tools: "tools_openssl_x64"
+          tools: "tools_opensslv3_x64"
 
       - name: Configure
         shell: pwsh
