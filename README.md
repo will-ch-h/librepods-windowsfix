@@ -35,6 +35,10 @@ AirPods at the kernel level. (own driver in the works)
 
 ## Steps to install
 
+> [!CAUTION]
+> This project is still very much in beta, 
+> don't expect a smooth experience.
+
 1. Install the [**MagicAAP driver**](https://magicpods.app/magicaap/) in Windows **Test Mode**.
 
 > **Do NOT install the community-signed driver.** It relies on a code-signing exploit
