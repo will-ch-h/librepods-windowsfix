@@ -55,3 +55,6 @@ AirPods at the kernel level. (own driver in the works)
 - Sometimes airpods show up as disconnected and out of ear when connected
   > This happens when put back into and taken out of the case really quickly
 - Installed size is a little heavy (100+mb), try and slim down
+
+# Notice of AI Use
+Both upstream repos used generative AI at their own discretion. AI was used for the build instructions and to solve some bugs 
