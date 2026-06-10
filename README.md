@@ -24,3 +24,25 @@ AirPods at the kernel level. (own driver in the works)
 > **Do NOT install the community-signed driver.** It relies on a code-signing exploit
 > (a leaked certificate) this opens a potential backdoor on your
 > system.
+
+2. Download the Setup.exe from releases.
+
+4. Go through the setup process.
+
+6. On first run it might be a little weird, click in and out of the window.
+
+7. It is recomended to move the tray icon onto your taskbar but you don't have to :).
+
+## Current Features 
+- See Airpod Battery and Connection Status
+- Display when Airpod(s) is/are out of ear
+- Change between listening modes (ANC-Transparency-Adaptive)
+- Conversation Awareness
+- Pause currently playing audio when airpod is removed. (can be turned off)
+- Notification fly up when airpods connected.
+
+
+## Needed Improvements 
+- After first install the window will not close until clicked into
+- Sometimes airpods show up as disconnected and out of ear when connected
+  > This happens when put back into and taken out of the case really quickly
